@@ -316,7 +316,7 @@ func (bs *VASBlockScanner) RescanFailedRecord() {
 		}
 
 		//删除未扫记录
-		bs.wm.DeleteUnscanRecord(height)
+		bs.DeleteUnscanRecord(uint32(height))
 	}
 }
 
