@@ -1,4 +1,4 @@
-# grand50-adapter
+# vas-adapter
 
 vas-adapter继承了bitcoin-adapter，主要修改了如下内容：
 

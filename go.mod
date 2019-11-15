@@ -6,7 +6,7 @@ require (
 	github.com/asdine/storm v2.1.2+incompatible
 	github.com/astaxie/beego v1.12.0
 	github.com/blocktree/bitcoin-adapter v1.3.1
-	github.com/blocktree/go-owaddress v1.0.5
+	github.com/blocktree/go-owaddress v1.0.6
 	github.com/blocktree/go-owcdrivers v1.1.22
 	github.com/blocktree/go-owcrypt v1.0.4
 	github.com/blocktree/openwallet v1.5.5
@@ -19,5 +19,3 @@ require (
 	github.com/shopspring/decimal v0.0.0-20191009025716-f1972eb1d1f5
 	github.com/tidwall/gjson v1.2.1
 )
-
-replace github.com/blocktree/go-owaddress => ../../blocktree/go-owaddress
