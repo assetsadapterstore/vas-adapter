@@ -61,13 +61,13 @@ type Vout struct {
 type WalletManager struct {
 	openwallet.AssetsAdapterBase
 
-	Storage         *hdkeystore.HDKeystore        //秘钥存取
-	WalletClient    *Client                       // 节点客户端
-	Config          *WalletConfig                 //钱包管理配置
-	Decoder         openwallet.AddressDecoder     //地址编码器
-	TxDecoder       openwallet.TransactionDecoder //交易单编码器
-	Log             *log.OWLogger                 //日志工具
-	Blockscanner    *VASBlockScanner              //区块扫描器
+	Storage      *hdkeystore.HDKeystore        //秘钥存取
+	WalletClient *Client                       // 节点客户端
+	Config       *WalletConfig                 //钱包管理配置
+	Decoder      openwallet.AddressDecoder     //地址编码器
+	TxDecoder    openwallet.TransactionDecoder //交易单编码器
+	Log          *log.OWLogger                 //日志工具
+	Blockscanner *VASBlockScanner              //区块扫描器
 }
 
 func NewWalletManager() *WalletManager {
@@ -173,7 +173,6 @@ func (wm *WalletManager) getListUnspentByCore(min uint64, addresses ...string) (
 	return utxos, nil
 }
 
-
 //GetInfo 获取核心钱包节点信息
 func (wm *WalletManager) GetInfo() error {
 
@@ -192,8 +191,7 @@ func (wm *WalletManager) ListAddressesRPC() ([]string, error) {
 		addresses = make([]string, 0)
 	)
 
-	request := []interface{}{
-	}
+	request := []interface{}{}
 
 	result, err := wm.WalletClient.Call("listaddresses", request)
 	if err != nil {
@@ -303,4 +301,15 @@ func (wm *WalletManager) EstimateFee(inputs, outputs int64, feeRate decimal.Deci
 	return trx_fee, nil
 
 	//return wm.Config.MinFees, nil
+}
+
+//GetBlockHash 根据区块高度获得区块hash
+func (wm *WalletManager) GetBlockByHeight(height uint32) (*Block, error) {
+
+	hash, err := wm.getBlockHashByCore(height)
+	if err != nil {
+		return nil, err
+	}
+
+	return wm.getBlockByCore(hash)
 }

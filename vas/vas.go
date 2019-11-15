@@ -88,11 +88,7 @@ func (wm *WalletManager) LoadAssetsConfig(c config.Configer) error {
 	token := BasicAuth(wm.Config.RpcUser, wm.Config.RpcPassword)
 	//omniToken := BasicAuth(wm.Config.OmniRPCUser, wm.Config.OmniRPCPassword)
 
-	if wm.Config.RPCServerType == RPCServerCore {
-		wm.WalletClient = NewClient(wm.Config.ServerAPI, token, false)
-	} else {
-		//wm.ExplorerClient = NewExplorer(wm.Config.ServerAPI, false)
-	}
+	wm.WalletClient = NewClient(wm.Config.ServerAPI, token, false)
 
 	//wm.OnmiClient = NewClient(wm.Config.OmniCoreAPI, omniToken, false)
 

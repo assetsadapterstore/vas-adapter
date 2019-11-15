@@ -26,6 +26,20 @@ import (
 	"strings"
 )
 
+// ParseHeader 区块链头
+func ParseHeader(b *Block) *openwallet.BlockHeader {
+	obj := openwallet.BlockHeader{}
+
+	//解析josn
+	obj.Merkleroot = b.Merkleroot
+	obj.Hash = b.Hash
+	obj.Previousblockhash = b.Previousblockhash
+	obj.Height = b.Height
+	obj.Time = b.Time
+	obj.Symbol = Symbol
+	return &obj
+}
+
 //BlockchainInfo 本地节点区块链信息
 type BlockchainInfo struct {
 	Chain                string `json:"chain"`
@@ -134,27 +148,27 @@ type Block struct {
 
 	/*
 
-		"hash": "0056d7f09c9e6e3aa437c63f6c5dfc36b71254b450771f50f275c9414720b9d3",
-	        "miner": "VUYMX6z5XwBhqfW1mM9vyJEAzJXtfqmBK3",
-	        "confirmations": 103,
-	        "size": 1352,
-	        "height": 42491,
-	        "version": 3,
-	        "merkleroot": "5a08f932a991dd01e9077b112f070ce02e27384140a1bedd6d5c05e6fe90a866",
-	        "tx": [
-	            "6ef2a0402e658a5535bf5f92085bfb44de3bb8f062b7b3ac27ed6096fa8577ee",
-	            "a8e77558ad5ac44b2913fc1a53094394249ddc41a4d5bb55e1ceba348d7ba5b4",
-	            "13f7a6f00c7ca6357f3f26e4bc201004206ace588fb93691463d0571cae7b698",
-	            "7c6acfc0cd4400ccfea3a22028bb8f40f1f307a638bd4ad51bec796c21a718fa",
-	            "1b8a9835e78465571b726addec38378a0ffab2b43fcb84af0d86c6f64a02566a"
-	        ],
-	        "time": 1573722270,
-	        "nonce": 258,
-	        "bits": "2000ffff",
-	        "difficulty": 5.96046447753906e-8,
-	        "chainwork": "0000000000000000000000000000000000000000000000000000000000a5fc00",
-	        "prevblockhash": "0077f8bb8270d2be89979813ed9f673bbc6c84587605a90e00fcba75c3cb8587",
-	        "nextblockhash": "003b43eca0e46c7a823bd3b73d90368a47820bc93ecd52cefc30146b742f1042"
+			"hash": "0056d7f09c9e6e3aa437c63f6c5dfc36b71254b450771f50f275c9414720b9d3",
+		        "miner": "VUYMX6z5XwBhqfW1mM9vyJEAzJXtfqmBK3",
+		        "confirmations": 103,
+		        "size": 1352,
+		        "height": 42491,
+		        "version": 3,
+		        "merkleroot": "5a08f932a991dd01e9077b112f070ce02e27384140a1bedd6d5c05e6fe90a866",
+		        "tx": [
+		            "6ef2a0402e658a5535bf5f92085bfb44de3bb8f062b7b3ac27ed6096fa8577ee",
+		            "a8e77558ad5ac44b2913fc1a53094394249ddc41a4d5bb55e1ceba348d7ba5b4",
+		            "13f7a6f00c7ca6357f3f26e4bc201004206ace588fb93691463d0571cae7b698",
+		            "7c6acfc0cd4400ccfea3a22028bb8f40f1f307a638bd4ad51bec796c21a718fa",
+		            "1b8a9835e78465571b726addec38378a0ffab2b43fcb84af0d86c6f64a02566a"
+		        ],
+		        "time": 1573722270,
+		        "nonce": 258,
+		        "bits": "2000ffff",
+		        "difficulty": 5.96046447753906e-8,
+		        "chainwork": "0000000000000000000000000000000000000000000000000000000000a5fc00",
+		        "prevblockhash": "0077f8bb8270d2be89979813ed9f673bbc6c84587605a90e00fcba75c3cb8587",
+		        "nextblockhash": "003b43eca0e46c7a823bd3b73d90368a47820bc93ecd52cefc30146b742f1042"
 
 	*/
 

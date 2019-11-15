@@ -37,7 +37,6 @@ var (
 	TestNetAddressPrefix = vasTransaction.AddressPrefix{P2PKHPrefix: []byte{0x46}, P2WPKHPrefix: []byte{0x05}, P2SHPrefix: nil, Bech32Prefix: "vas"}
 )
 
-
 type WalletConfig struct {
 
 	//币种
@@ -114,7 +113,6 @@ type WalletConfig struct {
 	MinFees decimal.Decimal
 	//数据目录
 	DataDir string
-
 }
 
 func NewConfig(symbol string, curveType uint32, decimals int32) *WalletConfig {
@@ -170,7 +168,7 @@ func NewConfig(symbol string, curveType uint32, decimals int32) *WalletConfig {
 	//核心钱包密码，配置有值用于自动解锁钱包
 	c.WalletPassword = ""
 	//后台数据源类型
-	c.RPCServerType = RPCServerCore
+	c.RPCServerType = 0
 	//支持隔离见证
 	c.SupportSegWit = true
 	//是否支持omni

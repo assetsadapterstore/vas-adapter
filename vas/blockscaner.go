@@ -32,29 +32,28 @@ const (
 	blockchainBucket = "blockchain" //区块链数据集合
 	//periodOfTask      = 5 * time.Second //定时任务执行隔间
 	maxExtractingSize = 6 //并发的扫描线程数
-
-	RPCServerCore     = 0 //RPC服务，bitcoin核心钱包
-	RPCServerExplorer = 1 //RPC服务，insight-API
 )
 
 //VASBlockScanner bitcoin的区块链扫描器
 type VASBlockScanner struct {
 	*openwallet.BlockScannerBase
 
-	CurrentBlockHeight   uint64             //当前区块高度
-	extractingCH         chan struct{}      //扫描工作令牌
-	wm                   *WalletManager     //钱包管理者
-	IsScanMemPool        bool               //是否扫描交易池
-	RescanLastBlockCount uint64             //重扫上N个区块数量
+	CurrentBlockHeight   uint64         //当前区块高度
+	extractingCH         chan struct{}  //扫描工作令牌
+	wm                   *WalletManager //钱包管理者
+	IsScanMemPool        bool           //是否扫描交易池
+	RescanLastBlockCount uint64         //重扫上N个区块数量
 
 }
 
 //ExtractResult 扫描完成的提取结果
 type ExtractResult struct {
-	extractData     map[string]*openwallet.TxExtractData
-	TxID            string
-	BlockHeight     uint64
-	Success         bool
+	extractData map[string]*openwallet.TxExtractData
+	TxID        string
+	BlockHash   string
+	BlockHeight uint64
+	BlockTime   int64
+	Success     bool
 }
 
 //SaveResult 保存结果
@@ -74,7 +73,6 @@ func NewVASBlockScanner(wm *WalletManager) *VASBlockScanner {
 	bs.wm = wm
 	bs.IsScanMemPool = true
 	bs.RescanLastBlockCount = 0
-	//bs.RPCServer = RPCServerCore
 
 	//设置扫描任务
 	bs.SetTask(bs.ScanBlockTask)
@@ -82,171 +80,115 @@ func NewVASBlockScanner(wm *WalletManager) *VASBlockScanner {
 	return &bs
 }
 
-//SetRescanBlockHeight 重置区块链扫描高度
-func (bs *VASBlockScanner) SetRescanBlockHeight(height uint64) error {
-	height = height - 1
-	if height < 0 {
-		return errors.New("block height to rescan must greater than 0.")
-	}
-
-	hash, err := bs.wm.GetBlockHash(height)
-	if err != nil {
-		return err
-	}
-
-	bs.wm.SaveLocalNewBlock(height, hash)
-
-	return nil
-}
-
 //ScanBlockTask 扫描任务
 func (bs *VASBlockScanner) ScanBlockTask() {
 
-	//获取本地区块高度
-	blockHeader, err := bs.GetScannedBlockHeader()
+	var (
+		currentHeight uint32
+		currentHash   string
+	)
+
+	// get local block header
+	currentHeight, currentHash, err := bs.GetLocalBlockHead()
+
 	if err != nil {
-		bs.wm.Log.Std.Info("block scanner can not get new block height; unexpected error: %v", err)
-		return
+		bs.wm.Log.Std.Error("", err)
 	}
 
-	currentHeight := blockHeader.Height
-	currentHash := blockHeader.Hash
+	if currentHeight == 0 {
+		bs.wm.Log.Std.Info("No records found in local, get current block as the local!")
+
+		headBlock, err := bs.GetGlobalHeadBlock()
+		if err != nil {
+			bs.wm.Log.Std.Info("get head block error, err=%v", err)
+		}
+
+		currentHash = headBlock.Previousblockhash
+		currentHeight = uint32(headBlock.Height - 1)
+	}
 
 	for {
-
 		if !bs.Scanning {
-			//区块扫描器已暂停，马上结束本次任务
+			// stop scan
 			return
 		}
 
-		//获取最大高度
-		maxHeight, err := bs.wm.GetBlockHeight()
+		maxBlockHeight, err := bs.wm.GetBlockHeight()
 		if err != nil {
-			//下一个高度找不到会报异常
-			bs.wm.Log.Std.Info("block scanner can not get rpc-server block height; unexpected error: %v", err)
+			bs.wm.Log.Errorf("get chain top failed, err=%v", err)
 			break
 		}
 
-		//是否已到最新高度
-		if currentHeight >= maxHeight {
-			bs.wm.Log.Std.Info("block scanner has scanned full chain data. Current height: %d", maxHeight)
+		bs.wm.Log.Info("current block height:", currentHeight, " maxBlockHeight:", maxBlockHeight)
+		if uint64(currentHeight) == maxBlockHeight-1 {
+			bs.wm.Log.Std.Info("block scanner has scanned full chain data. Current height %d", maxBlockHeight)
 			break
 		}
 
-		//继续扫描下一个区块
+		// next block
 		currentHeight = currentHeight + 1
 
 		bs.wm.Log.Std.Info("block scanner scanning height: %d ...", currentHeight)
+		block, err := bs.wm.GetBlockByHeight(currentHeight)
 
-		hash, err := bs.wm.GetBlockHash(currentHeight)
 		if err != nil {
-			//下一个高度找不到会报异常
-			bs.wm.Log.Std.Info("block scanner can not get new block hash; unexpected error: %v", err)
+			bs.wm.Log.Std.Info("block scanner can not get new block data by rpc; unexpected error: %v", err)
 			break
 		}
 
-		block, err := bs.wm.GetBlock(hash)
-		if err != nil {
-			bs.wm.Log.Std.Info("block scanner can not get new block data; unexpected error: %v", err)
-
-			//记录未扫区块
-			unscanRecord := NewUnscanRecord(currentHeight, "", err.Error())
-			bs.SaveUnscanRecord(unscanRecord)
-			bs.wm.Log.Std.Info("block height: %d extract failed.", currentHeight)
-			continue
-		}
-
-		isFork := false
-
-		//判断hash是否上一区块的hash
 		if currentHash != block.Previousblockhash {
-
 			bs.wm.Log.Std.Info("block has been fork on height: %d.", currentHeight)
 			bs.wm.Log.Std.Info("block height: %d local hash = %s ", currentHeight-1, currentHash)
 			bs.wm.Log.Std.Info("block height: %d mainnet hash = %s ", currentHeight-1, block.Previousblockhash)
-
 			bs.wm.Log.Std.Info("delete recharge records on block height: %d.", currentHeight-1)
 
-			//查询本地分叉的区块
-			forkBlock, _ := bs.wm.GetLocalBlock(currentHeight - 1)
-
-			//删除上一区块链的所有充值记录
-			//bs.DeleteRechargesByHeight(currentHeight - 1)
-			//删除上一区块链的未扫记录
-			bs.wm.DeleteUnscanRecord(currentHeight - 1)
-			currentHeight = currentHeight - 2 //倒退2个区块重新扫描
+			// get local fork bolck
+			forkBlock, _ := bs.GetLocalBlock(currentHeight - 1)
+			// delete last unscan block
+			bs.DeleteUnscanRecord(currentHeight - 1)
+			currentHeight = currentHeight - 2 // scan back to last 2 block
 			if currentHeight <= 0 {
 				currentHeight = 1
 			}
-
-			localBlock, err := bs.wm.GetLocalBlock(currentHeight)
+			localBlock, err := bs.GetLocalBlock(currentHeight)
 			if err != nil {
 				bs.wm.Log.Std.Error("block scanner can not get local block; unexpected error: %v", err)
-
-				//查找core钱包的RPC
+				//get block from rpc
 				bs.wm.Log.Info("block scanner prev block height:", currentHeight)
-
-				prevHash, err := bs.wm.GetBlockHash(currentHeight)
+				curBlock, err := bs.wm.GetBlockByHeight(currentHeight)
 				if err != nil {
-					bs.wm.Log.Std.Error("block scanner can not get prev block; unexpected error: %v", err)
+					bs.wm.Log.Std.Error("block scanner can not get prev block by rpc; unexpected error: %v", err)
 					break
 				}
-
-				localBlock, err = bs.wm.GetBlock(prevHash)
-				if err != nil {
-					bs.wm.Log.Std.Error("block scanner can not get prev block; unexpected error: %v", err)
-					break
-				}
-
+				currentHash = curBlock.Hash
+			} else {
+				//重置当前区块的hash
+				currentHash = localBlock.Hash
 			}
-
-			//重置当前区块的hash
-			currentHash = localBlock.Hash
-
 			bs.wm.Log.Std.Info("rescan block on height: %d, hash: %s .", currentHeight, currentHash)
 
 			//重新记录一个新扫描起点
-			bs.wm.SaveLocalNewBlock(localBlock.Height, localBlock.Hash)
-
-			isFork = true
+			bs.SaveLocalBlockHead(currentHeight, currentHash)
 
 			if forkBlock != nil {
-
 				//通知分叉区块给观测者，异步处理
-				bs.newBlockNotify(forkBlock, isFork)
+				bs.forkBlockNotify(forkBlock)
 			}
 
 		} else {
-
-			err = bs.BatchExtractTransaction(block.Height, block.Hash, block.tx)
+			currentHash = block.Hash
+			err := bs.BatchExtractTransaction(uint64(currentHeight), currentHash, block.tx)
 			if err != nil {
-				bs.wm.Log.Std.Info("block scanner can not extractRechargeRecords; unexpected error: %v", err)
+				bs.wm.Log.Std.Error("block scanner ran BatchExtractTransactions occured unexpected error: %v", err)
 			}
 
-			//重置当前区块的hash
-			currentHash = hash
-
 			//保存本地新高度
-			bs.wm.SaveLocalNewBlock(currentHeight, currentHash)
-			bs.wm.SaveLocalBlock(block)
-
-			isFork = false
-
+			bs.SaveLocalBlockHead(currentHeight, currentHash)
+			bs.SaveLocalBlock(block)
 			//通知新区块给观测者，异步处理
-			bs.newBlockNotify(block, isFork)
+			bs.newBlockNotify(block)
 		}
-
 	}
-
-	//重扫前N个块，为保证记录找到
-	for i := currentHeight - bs.RescanLastBlockCount; i < currentHeight; i++ {
-		bs.scanBlock(i)
-	}
-
-	//if bs.IsScanMemPool {
-	//	//扫描交易内存池
-	//	bs.ScanTxMemPool()
-	//}
 
 	//重扫失败区块
 	bs.RescanFailedRecord()
@@ -262,14 +204,14 @@ func (bs *VASBlockScanner) ScanBlock(height uint64) error {
 	}
 
 	//通知新区块给观测者，异步处理
-	bs.newBlockNotify(block, false)
+	bs.newBlockNotify(block)
 
 	return nil
 }
 
 func (bs *VASBlockScanner) scanBlock(height uint64) (*Block, error) {
 
-	hash, err := bs.wm.GetBlockHash(height)
+	hash, err := bs.wm.GetBlockHash(uint32(height))
 	if err != nil {
 		//下一个高度找不到会报异常
 		bs.wm.Log.Std.Info("block scanner can not get new block hash; unexpected error: %v", err)
@@ -281,7 +223,7 @@ func (bs *VASBlockScanner) scanBlock(height uint64) (*Block, error) {
 		bs.wm.Log.Std.Info("block scanner can not get new block data; unexpected error: %v", err)
 
 		//记录未扫区块
-		unscanRecord := NewUnscanRecord(height, "", err.Error())
+		unscanRecord := openwallet.NewUnscanRecord(height, "", err.Error(), bs.wm.Symbol())
 		bs.SaveUnscanRecord(unscanRecord)
 		bs.wm.Log.Std.Info("block height: %d extract failed.", height)
 		return nil, err
@@ -330,7 +272,7 @@ func (bs *VASBlockScanner) RescanFailedRecord() {
 		blockMap = make(map[uint64][]string)
 	)
 
-	list, err := bs.wm.GetUnscanRecords()
+	list, err := bs.BlockchainDAI.GetUnscanRecords(bs.wm.Symbol())
 	if err != nil {
 		bs.wm.Log.Std.Info("block scanner can not get rescan data; unexpected error: %v", err)
 	}
@@ -362,16 +304,10 @@ func (bs *VASBlockScanner) RescanFailedRecord() {
 
 		if len(txs) == 0 {
 
-			hash, err := bs.wm.GetBlockHash(height)
+			block, err := bs.wm.GetBlockByHeight(uint32(height))
 			if err != nil {
 				//下一个高度找不到会报异常
 				bs.wm.Log.Std.Info("block scanner can not get new block hash; unexpected error: %v", err)
-				continue
-			}
-
-			block, err := bs.wm.GetBlock(hash)
-			if err != nil {
-				bs.wm.Log.Std.Info("block scanner can not get new block data; unexpected error: %v", err)
 				continue
 			}
 
@@ -387,15 +323,18 @@ func (bs *VASBlockScanner) RescanFailedRecord() {
 		//删除未扫记录
 		bs.wm.DeleteUnscanRecord(height)
 	}
-
-	//删除未没有找到交易记录的重扫记录
-	bs.wm.DeleteUnscanRecordNotFindTX()
 }
 
 //newBlockNotify 获得新区块后，通知给观测者
-func (bs *VASBlockScanner) newBlockNotify(block *Block, isFork bool) {
-	header := block.BlockHeader(bs.wm.Symbol())
-	header.Fork = isFork
+func (bs *VASBlockScanner) forkBlockNotify(block *Block) {
+	header := ParseHeader(block)
+	header.Fork = true
+	bs.NewBlockNotify(header)
+}
+
+//newBlockNotify 获得新区块后，通知给观测者
+func (bs *VASBlockScanner) newBlockNotify(block *Block) {
+	header := ParseHeader(block)
 	bs.NewBlockNotify(header)
 }
 
@@ -438,7 +377,7 @@ func (bs *VASBlockScanner) BatchExtractTransaction(blockHeight uint64, blockHash
 
 			} else {
 				//记录未扫区块
-				unscanRecord := NewUnscanRecord(height, "", "")
+				unscanRecord := openwallet.NewUnscanRecord(height, "", "", bs.wm.Symbol())
 				bs.SaveUnscanRecord(unscanRecord)
 				bs.wm.Log.Std.Info("block height: %d extract failed.", height)
 				failed++ //标记保存失败数
@@ -529,9 +468,9 @@ func (bs *VASBlockScanner) ExtractTransaction(blockHeight uint64, blockHash stri
 
 	var (
 		result = ExtractResult{
-			BlockHeight:     blockHeight,
-			TxID:            txid,
-			extractData:     make(map[string]*openwallet.TxExtractData),
+			BlockHeight: blockHeight,
+			TxID:        txid,
+			extractData: make(map[string]*openwallet.TxExtractData),
 		}
 	)
 
@@ -803,7 +742,7 @@ func (bs *VASBlockScanner) newExtractDataNotify(height uint64, extractData map[s
 			if err != nil {
 				bs.wm.Log.Error("BlockExtractDataNotify unexpected error:", err)
 				//记录未扫区块
-				unscanRecord := NewUnscanRecord(height, "", "ExtractData Notify failed.")
+				unscanRecord := openwallet.NewUnscanRecord(height, "", "ExtractData Notify failed.", bs.wm.Symbol())
 				err = bs.SaveUnscanRecord(unscanRecord)
 				if err != nil {
 					bs.wm.Log.Std.Error("block height: %d, save unscan record failed. unexpected error: %v", height, err.Error())
@@ -868,7 +807,7 @@ func (wm *WalletManager) DeleteUnscanRecordNotFindTX() error {
 //			if err != nil || len(r.BlockHash) == 0 {
 //
 //				//记录未扫区块
-//				unscanRecord := NewUnscanRecord(height, r.TxID, "save to wallet failed.")
+//				unscanRecord := openwallet.NewUnscanRecord(height, r.TxID, "save to wallet failed.", bs.wm.Symbol())
 //				err = bs.SaveUnscanRecord(unscanRecord)
 //				if err != nil {
 //					bs.wm.Log.Std.Error("block height: %d, txID: %s save unscan record failed. unexpected error: %v", height, r.TxID, err.Error())
@@ -908,7 +847,7 @@ func (bs *VASBlockScanner) GetScannedBlockHeader() (*openwallet.BlockHeader, err
 		//就上一个区块链为当前区块
 		blockHeight = blockHeight - 1
 
-		hash, err = bs.wm.GetBlockHash(blockHeight)
+		hash, err = bs.wm.GetBlockHash(uint32(blockHeight))
 		if err != nil {
 			return nil, err
 		}
@@ -932,7 +871,7 @@ func (bs *VASBlockScanner) GetCurrentBlockHeader() (*openwallet.BlockHeader, err
 		return nil, err
 	}
 
-	hash, err = bs.wm.GetBlockHash(blockHeight)
+	hash, err = bs.wm.GetBlockHash(uint32(blockHeight))
 	if err != nil {
 		return nil, err
 	}
@@ -947,6 +886,28 @@ func (bs *VASBlockScanner) GetGlobalMaxBlockHeight() uint64 {
 		return 0
 	}
 	return maxHeight
+}
+
+//GetGlobalHeadBlock GetGlobalHeadBlock
+func (bs *VASBlockScanner) GetGlobalHeadBlock() (block *Block, err error) {
+	headBlockNum := bs.GetGlobalMaxBlockHeight()
+
+	block, err = bs.wm.GetBlockByHeight(uint32(headBlockNum) - 1)
+	if err != nil {
+		bs.wm.Log.Std.Info("block scanner can not get block by height; unexpected error:%v", err)
+		return
+	}
+
+	return
+}
+
+//GetChainInfo GetChainInfo
+func (bs *VASBlockScanner) GetChainInfo() (infoResp *BlockchainInfo, err error) {
+	//infoResp, err = bs.wm.GetBlockchainInfo()
+	//if err != nil {
+	//	bs.wm.Log.Std.Info("block scanner can not get info; unexpected error:%v", err)
+	//}
+	return nil, nil
 }
 
 //GetScannedBlockHeight 获取已扫区块高度
@@ -1032,28 +993,6 @@ func (bs *VASBlockScanner) ExtractTransactionData(txid string, scanTargetFunc op
 //	return nil
 //}
 
-//SaveTxToWalletDB 保存交易记录到钱包数据库
-func (bs *VASBlockScanner) SaveUnscanRecord(record *UnscanRecord) error {
-
-	if record == nil {
-		return errors.New("the unscan record to save is nil")
-	}
-
-	if record.BlockHeight == 0 {
-		bs.wm.Log.Warn("unconfirmed transaction do not rescan")
-		return nil
-	}
-
-	//获取本地区块高度
-	db, err := storm.Open(filepath.Join(bs.wm.Config.DBPath, bs.wm.Config.BlockchainFile))
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	return db.Save(record)
-}
-
 //GetWalletByAddress 获取地址对应的钱包
 //func (bs *VASBlockScanner) GetWalletByAddress(address string) (*openwallet.Wallet, bool) {
 //	bs.mu.RLock()
@@ -1133,18 +1072,12 @@ func (wm *WalletManager) SaveLocalBlock(block *Block) {
 }
 
 //GetBlockHash 根据区块高度获得区块hash
-func (wm *WalletManager) GetBlockHash(height uint64) (string, error) {
-
-	if wm.Config.RPCServerType == RPCServerExplorer {
-		//return wm.getBlockHashByExplorer(height)
-		return "", nil
-	} else {
-		return wm.getBlockHashByCore(height)
-	}
+func (wm *WalletManager) GetBlockHash(height uint32) (string, error) {
+	return wm.getBlockHashByCore(height)
 }
 
 //getBlockHashByCore 根据区块高度获得区块hash
-func (wm *WalletManager) getBlockHashByCore(height uint64) (string, error) {
+func (wm *WalletManager) getBlockHashByCore(height uint32) (string, error) {
 
 	request := []interface{}{
 		height,
@@ -1420,4 +1353,10 @@ func (wm *WalletManager) calculateUnspent(utxos []*Unspent) map[string]*openwall
 
 	return addrBalanceMap
 
+}
+
+//SupportBlockchainDAI 支持外部设置区块链数据访问接口
+//@optional
+func (bs *VASBlockScanner) SupportBlockchainDAI() bool {
+	return true
 }
