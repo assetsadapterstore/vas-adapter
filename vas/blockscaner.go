@@ -292,7 +292,7 @@ func (bs *VASBlockScanner) RescanFailedRecord() {
 		}
 	}
 
-	for height, txs := range blockMap {
+	for height, _ := range blockMap {
 
 		if height == 0 {
 			continue
@@ -302,19 +302,14 @@ func (bs *VASBlockScanner) RescanFailedRecord() {
 
 		bs.wm.Log.Std.Info("block scanner rescanning height: %d ...", height)
 
-		if len(txs) == 0 {
-
-			block, err := bs.wm.GetBlockByHeight(uint32(height))
-			if err != nil {
-				//下一个高度找不到会报异常
-				bs.wm.Log.Std.Info("block scanner can not get new block hash; unexpected error: %v", err)
-				continue
-			}
-
-			txs = block.tx
+		block, err := bs.wm.GetBlockByHeight(uint32(height))
+		if err != nil {
+			//下一个高度找不到会报异常
+			bs.wm.Log.Std.Info("block scanner can not get new block hash; unexpected error: %v", err)
+			continue
 		}
 
-		err = bs.BatchExtractTransaction(height, hash, txs)
+		err = bs.BatchExtractTransaction(height, hash, block.tx)
 		if err != nil {
 			bs.wm.Log.Std.Info("block scanner can not extractRechargeRecords; unexpected error: %v", err)
 			continue
