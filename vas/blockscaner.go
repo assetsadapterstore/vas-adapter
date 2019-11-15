@@ -874,6 +874,22 @@ func (bs *VASBlockScanner) GetCurrentBlockHeader() (*openwallet.BlockHeader, err
 	return &openwallet.BlockHeader{Height: blockHeight, Hash: hash}, nil
 }
 
+//SetRescanBlockHeight 重置区块链扫描高度
+func (bs *VASBlockScanner) SetRescanBlockHeight(height uint64) error {
+	if height <= 0 {
+		return fmt.Errorf("block height to rescan must greater than 0. ")
+	}
+
+	block, err := bs.wm.GetBlockByHeight(uint32(height - 1))
+	if err != nil {
+		return err
+	}
+
+	bs.SaveLocalBlockHead(uint32(height-1), block.Hash)
+
+	return nil
+}
+
 func (bs *VASBlockScanner) GetGlobalMaxBlockHeight() uint64 {
 	maxHeight, err := bs.wm.GetBlockHeight()
 	if err != nil {
