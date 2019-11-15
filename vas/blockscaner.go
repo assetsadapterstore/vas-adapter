@@ -1235,27 +1235,27 @@ func (wm *WalletManager) GetUnscanRecords() ([]*UnscanRecord, error) {
 	return list, nil
 }
 
-//DeleteUnscanRecord 删除指定高度的未扫记录
-func (wm *WalletManager) DeleteUnscanRecord(height uint64) error {
-	//获取本地区块高度
-	db, err := storm.Open(filepath.Join(wm.Config.DBPath, wm.Config.BlockchainFile))
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	var list []*UnscanRecord
-	err = db.Find("BlockHeight", height, &list)
-	if err != nil {
-		return err
-	}
-
-	for _, r := range list {
-		db.DeleteStruct(r)
-	}
-
-	return nil
-}
+////DeleteUnscanRecord 删除指定高度的未扫记录
+//func (wm *WalletManager) DeleteUnscanRecord(height uint64) error {
+//	//获取本地区块高度
+//	db, err := storm.Open(filepath.Join(wm.Config.DBPath, wm.Config.BlockchainFile))
+//	if err != nil {
+//		return err
+//	}
+//	defer db.Close()
+//
+//	var list []*UnscanRecord
+//	err = db.Find("BlockHeight", height, &list)
+//	if err != nil {
+//		return err
+//	}
+//
+//	for _, r := range list {
+//		db.DeleteStruct(r)
+//	}
+//
+//	return nil
+//}
 
 //GetAssetsAccountBalanceByAddress 查询账户相关地址的交易记录
 func (bs *VASBlockScanner) GetBalanceByAddress(address ...string) ([]*openwallet.Balance, error) {
