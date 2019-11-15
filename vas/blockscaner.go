@@ -912,8 +912,8 @@ func (bs *VASBlockScanner) GetChainInfo() (infoResp *BlockchainInfo, err error) 
 
 //GetScannedBlockHeight 获取已扫区块高度
 func (bs *VASBlockScanner) GetScannedBlockHeight() uint64 {
-	localHeight, _ := bs.wm.GetLocalNewBlock()
-	return localHeight
+	height, _, _ := bs.GetLocalBlockHead()
+	return uint64(height)
 }
 
 func (bs *VASBlockScanner) ExtractTransactionData(txid string, scanTargetFunc openwallet.BlockScanTargetFunc) (map[string][]*openwallet.TxExtractData, error) {
