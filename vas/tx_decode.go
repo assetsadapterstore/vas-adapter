@@ -203,7 +203,16 @@ func (decoder *TransactionDecoder) CreateBTCRawTransaction(wrapper openwallet.Wa
 		}
 	}})
 
-	feesRate, _ = decimal.NewFromString(rawTx.FeeRate)
+	//获取手续费率
+	if len(rawTx.FeeRate) == 0 {
+		feesRate, err = decoder.wm.EstimateFeeRate()
+		if err != nil {
+			return err
+		}
+	} else {
+		feesRate, _ = decimal.NewFromString(rawTx.FeeRate)
+	}
+	//feesRate, _ = decimal.NewFromString(rawTx.FeeRate)
 
 	decoder.wm.Log.Info("Calculating wallet unspent record to build transaction...")
 	computeTotalSend := totalSend
