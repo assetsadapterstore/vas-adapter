@@ -24,7 +24,7 @@ isTestNet = false
 # support segWit
 supportSegWit = false
 # minimum transaction fees
-minFees = "0.0001"
+minFees = "0.001"
 # Cache data file directory, default = "", current directory: ./data
 dataDir = ""
 
